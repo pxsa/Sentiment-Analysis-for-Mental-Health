@@ -62,11 +62,65 @@ class EarlyStopping:
 # ==================================================
 # ==================================================
 
-def train_epoch():
-    pass
+def train_epoch(model, dataloader, criterion, optimizer,
+                device, clip=1.0):
+    model.train()
+    epoch_loss = 0
+    all_preds = []
+    all_labels = []
 
-def evaluate():
-    pass
+    for texts, labels in tqdm(dataloader, desc='Training'):
+        texts, labels = texts.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+        predictions = model(texts)
+        loss = criterion(predictions, labels)
+        loss.backward()
+
+        # Gradient clipping 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+        preds = predictions.argmax(dim=1).cpu().numpy()
+        all_preds.extend(preds)
+        all_labels.extend(labels.cpu().numpy())
+
+    accuracy = accuracy_score(all_labels, all_preds)
+    return epoch_loss / len(dataloader), accuracy
+    
+# ==================================================
+# ==================================================
+
+def evaluate(model, dataloader, criterion, device):
+    model.eval()
+    epoch_loss = 0
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for texts, labels in tqdm(dataloader, desc='Evaluating'):
+            texts, labels = texts.to(device), labels.to(device)
+
+            predictions = model(texts)
+            loss = criterion(predictions, labels)
+
+            epoch_loss += loss.item()
+            preds = predictions.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+            all_labels.extend(labels.cpu().numpy())
+    
+    accuracy = accuracy_score(all_labels, all_preds)
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_labels, all_preds, average='weighted', zero_division=0
+    )
+
+    return epoch_loss / len(dataloader), accuracy, precision, recall, f1, all_preds, all_labels
+
+# ==================================================
+# ==================================================
 
 def train_model(model, train_loader, val_loader, criterion,
                 optimizer, scheduler, device, num_epochs,
@@ -126,6 +180,16 @@ def train_model(model, train_loader, val_loader, criterion,
         model.load_state_dict(best_model_state)
     
     return model, train_losses, train_accs, val_losses, val_accs
-        
-def plot_training_history():
-    pass
+
+
+# ==================================================
+# ==================================================
+
+def plot_training_history(histories, model_names, save_path='training_history.png'):
+    fig, axes = plt.subplot(2, 2, figsize=(15, 10))
+
+    for i, (history, name) in enumerate(zip(histories, model_names)):
+        train_losses, train_accs, val_losses, val_acces = history
+        epochs = range(1, len(train_losses) + 1)
+
+        axes[0, 0].plot(epochs, train_losses, label=f'{name} Train') 
